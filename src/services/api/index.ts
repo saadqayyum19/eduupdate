@@ -5,6 +5,8 @@ export * from './dashboard';
 export * from './fees';
 export * from './marks';
 export * from './quizzes';
+export * from './reports';
+export * from './settings';
 export * from './subjects';
 export * from './timetable';
 export * from './users';

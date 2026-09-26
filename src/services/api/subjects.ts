@@ -1,8 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Subject } from '@/types';
 import { CHART_COLORS } from '@/lib/constants';
-import { getDb, mockDelay, nextId } from '../mockDb';
-import { purgeSubjectReferences, reconcileClass } from '../cascade';
+import { http } from '../http';
 
 export const subjectKeys = {
   all: ['subjects'] as const,
@@ -16,72 +15,41 @@ export interface SubjectInput {
   color?: string;
 }
 
+export const emptySubject = (): SubjectInput => ({ name: '', code: '', classIds: [] });
+
 export async function fetchSubjects(): Promise<Subject[]> {
-  await mockDelay();
-  return [...getDb().subjects].sort((a, b) => a.name.localeCompare(b.name));
+  const { data } = await http.get<{ items: Subject[] }>('/subjects', { params: { pageSize: 200 } });
+  return data.items;
 }
 
 export async function createSubject(input: SubjectInput): Promise<Subject> {
-  await mockDelay();
-  const subjects = getDb().subjects;
-  const subject: Subject = {
-    id: nextId('s'),
-    name: input.name.trim(),
-    code: input.code.trim().toUpperCase(),
-    classIds: input.classIds,
-    color: input.color ?? CHART_COLORS[subjects.length % CHART_COLORS.length],
-  };
-  subjects.push(subject);
-  return subject;
+  const { data } = await http.post<{ subject: Subject }>('/subjects', {
+    ...input,
+    color: input.color ?? CHART_COLORS[0],
+  });
+  return data.subject;
 }
 
 export async function updateSubject(id: string, input: Partial<SubjectInput>): Promise<Subject> {
-  await mockDelay();
-  const subjects = getDb().subjects;
-  const index = subjects.findIndex((item) => item.id === id);
-  if (index === -1) throw new Error('That subject could not be found.');
-  subjects[index] = { ...subjects[index], ...input };
-  return subjects[index];
+  const { data } = await http.patch<{ subject: Subject }>(`/subjects/${id}`, input);
+  return data.subject;
 }
 
 export async function deleteSubject(id: string): Promise<{ id: string }> {
-  await mockDelay();
-  const db = getDb();
-
-  db.subjects = db.subjects.filter((item) => item.id !== id);
-  purgeSubjectReferences(id);
-
+  await http.delete(`/subjects/${id}`);
   return { id };
 }
 
 /** Add / remove a subject from a class (used by the Subjects page chips). */
 export async function toggleSubjectClass(subjectId: string, classId: string): Promise<Subject> {
-  await mockDelay(250);
-  const db = getDb();
-  const subject = db.subjects.find((item) => item.id === subjectId);
-  if (!subject) throw new Error('That subject could not be found.');
-
-  const classRoom = db.classes.find((item) => item.id === classId);
-  if (!classRoom) throw new Error('That class could not be found.');
-
-  // Write the link once (on the class) and let the reconciler mirror it onto the subject.
-  classRoom.subjectIds = classRoom.subjectIds.includes(subjectId)
-    ? classRoom.subjectIds.filter((id) => id !== subjectId)
-    : [...classRoom.subjectIds, subjectId];
-
-  reconcileClass(classId);
-
-  return subject;
+  const { data } = await http.post<{ subject: Subject }>(`/subjects/${subjectId}/classes`, { classId });
+  return data.subject;
 }
 
 // ---------------------------------------------------------------------------- hooks
 
 export function useSubjects(options?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: subjectKeys.list(),
-    queryFn: fetchSubjects,
-    enabled: options?.enabled,
-  });
+  return useQuery({ queryKey: subjectKeys.list(), queryFn: fetchSubjects, enabled: options?.enabled });
 }
 
 export function useCreateSubject() {

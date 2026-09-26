@@ -62,7 +62,7 @@ export async function findSettings(): Promise<ResolvedSettings> {
       minAttendancePercent:
         setting.attendanceRules?.minAttendancePercent ?? FALLBACK_SETTINGS.attendanceRules.minAttendancePercent,
     },
-    features: Object.fromEntries((setting.features as Map<string, boolean> | undefined)?.entries() ?? []),
+    features: { ...((setting.features as Record<string, boolean> | undefined) ?? {}) },
   };
 }
 

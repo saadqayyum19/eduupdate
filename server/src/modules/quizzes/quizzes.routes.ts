@@ -24,6 +24,15 @@ quizzesRouter.post('/', requireCapability('quizzes.manage'), validate({ body: qu
 }));
 
 // Submission routes are declared before `/:id` so "submissions" is not read as an id.
+quizzesRouter.get(
+  '/submissions/mine',
+  requireCapability('quizzes.view'),
+  asyncHandler(async (req, res) => {
+    const items = await service.mySubmissions(req.user!.id);
+    res.json({ items, total: items.length });
+  }),
+);
+
 quizzesRouter.patch(
   '/submissions/:id',
   requireCapability('quizzes.mark'),

@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
 import { ArrowLeft, GraduationCap, MailCheck, Send } from 'lucide-react';
+import { requestPasswordReset } from '@/services/auth';
 import { APP_NAME } from '@/lib/constants';
-import { sleep } from '@/lib/utils';
+import { useInstitution } from '@/lib/institution';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
@@ -16,12 +17,13 @@ const schema = z.object({
 
 type ForgotValues = z.infer<typeof schema>;
 
-/**
- * Forgot password — UI only. As requested there is no OTP/2FA yet, so we simply
- * confirm that a reset link *would* be emailed.
- */
+/** Requests a reset link. The response never reveals whether the address exists. */
 export default function ForgotPasswordPage() {
+  const navigate = useNavigate();
+  const institution = useInstitution();
   const [sentTo, setSentTo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
@@ -29,8 +31,13 @@ export default function ForgotPasswordPage() {
   } = useForm<ForgotValues>({ resolver: zodResolver(schema), defaultValues: { email: '' } });
 
   const onSubmit = async (values: ForgotValues) => {
-    await sleep(500);
-    setSentTo(values.email);
+    setError(null);
+    try {
+      await requestPasswordReset(values.email);
+      setSentTo(values.email);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not send the reset link. Please try again.');
+    }
   };
 
   return (
@@ -47,7 +54,7 @@ export default function ForgotPasswordPage() {
           </span>
           <div>
             <p className="text-sm font-semibold text-slate-900">{APP_NAME}</p>
-            <p className="text-xs text-slate-500">Password help</p>
+            <p className="text-xs text-slate-500">{institution.name || 'Password help'}</p>
           </div>
         </div>
 
@@ -56,46 +63,62 @@ export default function ForgotPasswordPage() {
             <span className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
               <MailCheck className="h-6 w-6" aria-hidden />
             </span>
-            <h1 className="text-lg font-semibold text-slate-900">Reset link sent</h1>
+            <h1 className="text-lg font-semibold text-slate-900">Check your email</h1>
             <p className="mt-1 text-sm text-slate-500">
               If an account exists for <span className="font-medium text-slate-700">{sentTo}</span>, a password reset
-              link would be emailed to it. (Demo only — no email is actually sent.)
+              link has been sent. The link expires in 60 minutes.
             </p>
             <Button className="mt-6" variant="outline" onClick={() => setSentTo(null)}>
               Use a different email
             </Button>
             <div className="mt-4">
-              <Link to="/login" className="inline-flex items-center gap-1 text-sm font-medium text-primary-700 hover:underline">
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary-700 hover:underline"
+              >
                 <ArrowLeft className="h-4 w-4" aria-hidden /> Back to sign in
-              </Link>
+              </button>
             </div>
           </div>
         ) : (
           <>
             <h1 className="text-xl font-semibold text-slate-900">Forgot your password?</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Enter the email you use for EduCore Lite and we will send a reset link.
+              Enter the email address on your account and we will send you a reset link.
             </p>
 
             <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4" noValidate>
               <Input
                 label="Email address"
                 type="email"
-                placeholder="you@school.test"
+                autoComplete="email"
+                placeholder="you@school.example"
                 required
                 leftIcon={<MailCheck className="h-4 w-4" aria-hidden />}
                 error={errors.email?.message}
                 {...register('email')}
               />
+
+              {error && (
+                <p role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {error}
+                </p>
+              )}
+
               <Button type="submit" size="lg" fullWidth loading={isSubmitting} leftIcon={<Send className="h-4 w-4" />}>
                 Send reset link
               </Button>
             </form>
 
             <div className="mt-6 text-center">
-              <Link to="/login" className="inline-flex items-center gap-1 text-sm font-medium text-primary-700 hover:underline">
+              <button
+                type="button"
+                onClick={() => navigate('/login')}
+                className="inline-flex items-center gap-1 text-sm font-medium text-primary-700 hover:underline"
+              >
                 <ArrowLeft className="h-4 w-4" aria-hidden /> Back to sign in
-              </Link>
+              </button>
             </div>
           </>
         )}

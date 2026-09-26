@@ -3,13 +3,8 @@ import { authenticate } from '../../middleware/auth';
 import { requireCapability } from '../../middleware/rbac';
 import { validate } from '../../middleware/validate';
 import * as controller from './users.controller';
-import {
-  changePasswordSchema,
-  profileSchema,
-  userCreateSchema,
-  userQuerySchema,
-  userUpdateSchema,
-} from './users.schema';
+import { profileSchema, userCreateSchema, userQuerySchema, userUpdateSchema } from './users.schema';
+import { changePasswordSchema } from '../auth/auth.schema';
 import { z } from 'zod';
 
 const idParam = z.object({ id: z.string().min(8, 'Enter a valid account id') });

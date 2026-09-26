@@ -1,89 +1,127 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { FeePayment, FeeStructure, FeeStatus } from '@/types';
-import { getDb, mockDelay, nextId } from '../mockDb';
-import { nextInvoiceNumber } from '../cascade';
+import type { FeeFrequency, FeePayment, FeeStatus, FeeStructure } from '@/types';
+import { http } from '../http';
 
 export const feeKeys = {
   all: ['fees'] as const,
   structures: () => [...feeKeys.all, 'structures'] as const,
   payments: (filters?: FeeFilters) => [...feeKeys.all, 'payments', filters ?? {}] as const,
+  summary: () => [...feeKeys.all, 'summary'] as const,
 };
 
 export interface FeeFilters {
   studentId?: string;
   classId?: string;
+  structureId?: string;
   status?: FeeStatus | 'all';
+  search?: string;
 }
 
 export interface FeeStructureInput {
   classId: string;
   title: string;
   amount: number;
-  frequency: FeeStructure['frequency'];
+  frequency: FeeFrequency;
   dueDate: string;
 }
 
-export async function fetchFeeStructures(): Promise<FeeStructure[]> {
-  await mockDelay();
-  return [...getDb().feeStructures];
+/** An invoice row enriched with the student and class names the table shows. */
+export interface InvoiceRow extends FeePayment {
+  studentName: string;
+  rollNo: string;
+  classId: string;
+  className: string;
+  structureTitle: string;
+  receipts?: Array<{
+    amount: number;
+    method: string;
+    reference: string;
+    paidOn: string;
+    note?: string;
+  }>;
 }
 
-export async function fetchFeePayments(filters: FeeFilters = {}): Promise<FeePayment[]> {
-  await mockDelay();
-  const db = getDb();
-  const studentIdsOfClass = filters.classId
-    ? db.users.filter((user) => user.classId === filters.classId).map((user) => user.id)
-    : null;
+export interface FeeSummaryPayload {
+  billed: number;
+  collected: number;
+  outstanding: number;
+  paidCount: number;
+  partialCount: number;
+  unpaidCount: number;
+  overdues: number;
+}
 
-  return db.feePayments
-    .filter((payment) => (filters.studentId ? payment.studentId === filters.studentId : true))
-    .filter((payment) => (studentIdsOfClass ? studentIdsOfClass.includes(payment.studentId) : true))
-    .filter((payment) => (filters.status && filters.status !== 'all' ? payment.status === filters.status : true))
-    .map((payment) => {
-      const structure = db.feeStructures.find((item) => item.id === payment.structureId);
-      return { ...payment, classId: structure?.classId } as FeePayment & { classId?: string };
-    });
+export async function fetchFeeStructures(): Promise<FeeStructure[]> {
+  const { data } = await http.get<{ items: FeeStructure[] }>('/fees/structures', { params: { pageSize: 200 } });
+  return data.items;
+}
+
+export async function fetchFeePayments(filters: FeeFilters = {}): Promise<InvoiceRow[]> {
+  const { data } = await http.get<{ items: InvoiceRow[] }>('/fees/invoices', {
+    params: {
+      pageSize: 500,
+      studentId: filters.studentId,
+      classId: filters.classId,
+      structureId: filters.structureId,
+      status: filters.status && filters.status !== 'all' ? filters.status : undefined,
+      search: filters.search || undefined,
+    },
+  });
+  return data.items;
+}
+
+export async function fetchFeeSummary(): Promise<FeeSummaryPayload> {
+  const { data } = await http.get<FeeSummaryPayload>('/fees/summary');
+  return data;
 }
 
 export async function createFeeStructure(input: FeeStructureInput): Promise<FeeStructure> {
-  await mockDelay(350);
-  const db = getDb();
-  const structure: FeeStructure = { ...input, id: nextId('f') };
-  db.feeStructures.push(structure);
-
-  // Raise an invoice for every student in the class straight away.
-  const students = db.users.filter((user) => user.classId === input.classId);
-  students.forEach((student) => {
-    db.feePayments.push({
-      id: nextId('pay'),
-      invoiceNo: nextInvoiceNumber(),
-      studentId: student.id,
-      structureId: structure.id,
-      amount: structure.amount,
-      paidAmount: 0,
-      status: 'unpaid',
-      dueDate: structure.dueDate,
-      paidOn: null,
-    });
-  });
-
-  return structure;
+  const { data } = await http.post<{ structure: FeeStructure }>('/fees/structures', input);
+  return data.structure;
 }
 
-/** Mark an invoice paid (or unpaid) from the fees table. */
-export async function setPaymentStatus(input: {
+export async function updateFeeStructure(
+  id: string,
+  input: Partial<FeeStructureInput> & { active?: boolean },
+): Promise<FeeStructure> {
+  const { data } = await http.patch<{ structure: FeeStructure }>(`/fees/structures/${id}`, input);
+  return data.structure;
+}
+
+export async function deleteFeeStructure(id: string): Promise<{ id: string }> {
+  await http.delete(`/fees/structures/${id}`);
+  return { id };
+}
+
+export async function recordPayment(input: {
   paymentId: string;
-  status: FeeStatus;
-}): Promise<FeePayment> {
-  await mockDelay(300);
-  const payment = getDb().feePayments.find((item) => item.id === input.paymentId);
-  if (!payment) throw new Error('That invoice could not be found.');
-  payment.status = input.status;
-  payment.paidAmount =
-    input.status === 'paid' ? payment.amount : input.status === 'partial' ? Math.round(payment.amount / 2) : 0;
-  payment.paidOn = input.status === 'unpaid' ? null : new Date().toISOString().slice(0, 10);
-  payment.method = input.status === 'unpaid' ? undefined : (payment.method ?? 'cash');
-  return payment;
+  amount: number;
+  method: 'cash' | 'card' | 'bank' | 'upi';
+  reference?: string;
+  paidOn?: string;
+  note?: string;
+}): Promise<InvoiceRow> {
+  const { data } = await http.post<{ invoice: InvoiceRow }>(`/fees/payments/${input.paymentId}/receipts`, {
+    amount: input.amount,
+    method: input.method,
+    reference: input.reference ?? '',
+    paidOn: input.paidOn ?? new Date().toISOString().slice(0, 10),
+    note: input.note ?? '',
+  });
+  return data.invoice;
+}
+
+export async function undoLastReceipt(paymentId: string): Promise<InvoiceRow> {
+  const { data } = await http.delete<{ invoice: InvoiceRow }>(`/fees/payments/${paymentId}/receipts/last`);
+  return data.invoice;
+}
+
+export function invoicePdfUrl(paymentId: string): string {
+  return `/api/fees/invoices/${paymentId}/pdf`;
+}
+
+export function receiptPdfUrl(paymentId: string): string {
+  return `/api/fees/payments/${paymentId}/receipt.pdf`;
 }
 
 // ---------------------------------------------------------------------------- hooks
@@ -96,18 +134,58 @@ export function useFeePayments(filters: FeeFilters = {}) {
   return useQuery({ queryKey: feeKeys.payments(filters), queryFn: () => fetchFeePayments(filters) });
 }
 
+export function useInvoices(filters: FeeFilters = {}) {
+  return useQuery({ queryKey: feeKeys.payments(filters), queryFn: () => fetchFeePayments(filters) });
+}
+
+export function useFeeSummary() {
+  return useQuery({ queryKey: feeKeys.summary(), queryFn: fetchFeeSummary });
+}
+
 export function useCreateFeeStructure() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createFeeStructure,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: feeKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+export function useUpdateFeeStructure() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Partial<FeeStructureInput> & { active?: boolean } }) =>
+      updateFeeStructure(id, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: feeKeys.all }),
   });
 }
 
-export function useSetPaymentStatus() {
+export function useDeleteFeeStructure() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: setPaymentStatus,
+    mutationFn: deleteFeeStructure,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: feeKeys.all }),
+  });
+}
+
+export function useRecordPayment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: recordPayment,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: feeKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useUndoReceipt() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: undoLastReceipt,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: feeKeys.all }),
   });
 }

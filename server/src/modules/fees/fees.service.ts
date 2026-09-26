@@ -1,5 +1,5 @@
 import { ApiError } from '../../lib/ApiError';
-import { buildPdf, money } from '../../lib/pdf';
+import { buildPdf, money, type PdfLine } from '../../lib/pdf';
 import { combineFilters, paginate, searchOr, skipOf } from '../../lib/pagination';
 import { serialiseList, serialiseOne } from '../../lib/serialise';
 import { findSettings } from '../../lib/settings';
@@ -123,7 +123,7 @@ export async function listInvoices(query: InvoiceQuery, user: AuthUser) {
       .lean(),
   ]);
 
-  const enriched = payments.map((payment) => {
+  const enriched: Array<Record<string, unknown>> = payments.map((payment) => {
     const student = students.find((item) => String(item._id) === payment.studentId);
     const classRoom = classes.find((item) => String(item._id) === (payment.classId ?? student?.classId));
     const structure = structures.find((item) => String(item._id) === payment.structureId);
@@ -237,7 +237,7 @@ export async function invoicePdf(id: string, institutionName: string, currency: 
   const amount = Number(invoice.amount);
   const paid = Number(invoice.paidAmount);
 
-  const lines = [
+  const lines: PdfLine[] = [
     { text: `Invoice number: ${String(invoice.invoiceNo)}`, bold: true, gap: 14 },
     { text: `Student: ${String(invoice.studentName)}${invoice.rollNo ? ` (${String(invoice.rollNo)})` : ''}` },
     { text: `Class: ${String(invoice.className || '—')}` },

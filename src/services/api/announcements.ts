@@ -1,74 +1,67 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Announcement, Role } from '@/types';
-import { getDb, mockDelay, nextId } from '../mockDb';
+import { http } from '../http';
 
 export const announcementKeys = {
   all: ['announcements'] as const,
-  list: (role?: Role) => [...announcementKeys.all, 'list', role ?? 'all'] as const,
+  list: () => [...announcementKeys.all, 'list'] as const,
 };
 
 export interface AnnouncementInput {
   title: string;
   body: string;
   audience: Role[] | 'all';
+  classIds?: string[];
   priority: Announcement['priority'];
   pinned?: boolean;
-  authorId: string;
 }
 
-export async function fetchAnnouncements(role?: Role): Promise<Announcement[]> {
-  await mockDelay();
-  return getDb()
-    .announcements.filter((item) =>
-      role && item.audience !== 'all' ? item.audience.includes(role) : true,
-    )
-    .sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return b.createdAt.localeCompare(a.createdAt);
-    });
+interface RawAnnouncement extends Omit<Announcement, 'audience'> {
+  audience: string[];
+}
+
+/** The API stores "everyone" as `['all']`; the UI works with the `'all'` sentinel. */
+function toAnnouncement(raw: RawAnnouncement): Announcement {
+  return {
+    ...raw,
+    audience: raw.audience.includes('all') || raw.audience.length === 0 ? 'all' : (raw.audience as Role[]),
+  };
+}
+
+export async function fetchAnnouncements(): Promise<Announcement[]> {
+  const { data } = await http.get<{ items: RawAnnouncement[] }>('/announcements', { params: { pageSize: 200 } });
+  return data.items.map(toAnnouncement);
 }
 
 export async function createAnnouncement(input: AnnouncementInput): Promise<Announcement> {
-  await mockDelay(350);
-  const announcement: Announcement = {
-    ...input,
-    id: nextId('an'),
-    createdAt: new Date().toISOString(),
-  };
-  getDb().announcements.unshift(announcement);
-  return announcement;
+  const { data } = await http.post<{ announcement: RawAnnouncement }>('/announcements', input);
+  return toAnnouncement(data.announcement);
 }
 
-export async function updateAnnouncement(
-  id: string,
-  input: Partial<AnnouncementInput>,
-): Promise<Announcement> {
-  await mockDelay(300);
-  const items = getDb().announcements;
-  const index = items.findIndex((item) => item.id === id);
-  if (index === -1) throw new Error('That announcement could not be found.');
-  items[index] = { ...items[index], ...input };
-  return items[index];
+export async function updateAnnouncement(id: string, input: Partial<AnnouncementInput>): Promise<Announcement> {
+  const { data } = await http.patch<{ announcement: RawAnnouncement }>(`/announcements/${id}`, input);
+  return toAnnouncement(data.announcement);
 }
 
 export async function deleteAnnouncement(id: string): Promise<{ id: string }> {
-  await mockDelay(300);
-  const db = getDb();
-  db.announcements = db.announcements.filter((item) => item.id !== id);
+  await http.delete(`/announcements/${id}`);
   return { id };
 }
 
 // ---------------------------------------------------------------------------- hooks
 
-export function useAnnouncements(role?: Role) {
-  return useQuery({ queryKey: announcementKeys.list(role), queryFn: () => fetchAnnouncements(role) });
+export function useAnnouncements() {
+  return useQuery({ queryKey: announcementKeys.list(), queryFn: fetchAnnouncements });
 }
 
 export function useCreateAnnouncement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createAnnouncement,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: announcementKeys.all }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: announcementKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
   });
 }
 
@@ -85,6 +78,9 @@ export function useDeleteAnnouncement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteAnnouncement,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: announcementKeys.all }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: announcementKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
   });
 }

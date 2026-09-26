@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ClassRoom } from '@/types';
-import { getDb, mockDelay, nextId } from '../mockDb';
-import { purgeClassReferences, reconcileClass } from '../cascade';
+import { http } from '../http';
 import { userKeys } from './users';
 
 export const classKeys = {
@@ -33,65 +32,34 @@ export const emptyClass = (): ClassInput => ({
 });
 
 export async function fetchClasses(): Promise<ClassRoom[]> {
-  await mockDelay();
-  return [...getDb().classes].sort((a, b) => a.name.localeCompare(b.name));
+  const { data } = await http.get<{ items: ClassRoom[] }>('/classes', { params: { pageSize: 200 } });
+  return data.items;
 }
 
 export async function fetchClass(id: string): Promise<ClassRoom> {
-  await mockDelay();
-  const classRoom = getDb().classes.find((item) => item.id === id);
-  if (!classRoom) throw new Error('That class could not be found.');
-  return classRoom;
+  const { data } = await http.get<{ class: ClassRoom }>(`/classes/${id}`);
+  return data.class;
 }
 
 export async function createClass(input: ClassInput): Promise<ClassRoom> {
-  await mockDelay(500);
-  const db = getDb();
-  const classRoom: ClassRoom = {
-    ...input,
-    id: nextId('c'),
-    createdAt: new Date().toISOString().slice(0, 10),
-  };
-  db.classes.push(classRoom);
-
-  // One helper keeps students, teachers, subjects, incharges and the timetable coherent.
-  reconcileClass(classRoom.id);
-
-  return classRoom;
+  const { data } = await http.post<{ class: ClassRoom }>('/classes', input);
+  return data.class;
 }
 
 export async function updateClass(id: string, input: Partial<ClassInput>): Promise<ClassRoom> {
-  await mockDelay();
-  const db = getDb();
-  const index = db.classes.findIndex((item) => item.id === id);
-  if (index === -1) throw new Error('That class could not be found.');
-
-  db.classes[index] = { ...db.classes[index], ...input };
-
-  // Membership edits (add/remove students or teachers) must ripple to the user records.
-  reconcileClass(id);
-
-  return db.classes[index];
+  const { data } = await http.patch<{ class: ClassRoom }>(`/classes/${id}`, input);
+  return data.class;
 }
 
 export async function deleteClass(id: string): Promise<{ id: string }> {
-  await mockDelay();
-  const db = getDb();
-
-  db.classes = db.classes.filter((item) => item.id !== id);
-  purgeClassReferences(id);
-
+  await http.delete(`/classes/${id}`);
   return { id };
 }
 
 // ---------------------------------------------------------------------------- hooks
 
 export function useClasses(options?: { enabled?: boolean }) {
-  return useQuery({
-    queryKey: classKeys.list(),
-    queryFn: fetchClasses,
-    enabled: options?.enabled,
-  });
+  return useQuery({ queryKey: classKeys.list(), queryFn: fetchClasses, enabled: options?.enabled });
 }
 
 export function useClass(id: string | undefined) {
@@ -120,7 +88,6 @@ export function useUpdateClass() {
     mutationFn: ({ id, input }: { id: string; input: Partial<ClassInput> }) => updateClass(id, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: classKeys.all });
-      // Membership changes also rewrite user + subject documents.
       queryClient.invalidateQueries({ queryKey: userKeys.all });
       queryClient.invalidateQueries({ queryKey: ['subjects'] });
     },
@@ -140,6 +107,7 @@ export function useDeleteClass() {
       queryClient.invalidateQueries({ queryKey: ['marks'] });
       queryClient.invalidateQueries({ queryKey: ['quizzes'] });
       queryClient.invalidateQueries({ queryKey: ['fees'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

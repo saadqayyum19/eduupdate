@@ -141,4 +141,10 @@ export async function markSubmission(id: string, score: number, feedback: string
   return serialiseOne(submission.toObject());
 }
 
+/** Every attempt made by the signed-in student (or their children, for a parent). */
+export async function mySubmissions(studentId: string): Promise<unknown[]> {
+  const items = await QuizSubmission.find({ studentId }).sort({ submittedAt: -1 }).lean();
+  return serialiseList(items);
+}
+
 export { purgeSubjectReferences };

@@ -6,7 +6,7 @@ import { assertClassAccess, resolveScope, scopedFilter } from '../../lib/scope';
 import { authenticate } from '../../middleware/auth';
 import { requireCapability } from '../../middleware/rbac';
 import { validate } from '../../middleware/validate';
-import { Attendance } from '../../models/Attendance';
+import { Attendance, type AttendanceStatus } from '../../models/Attendance';
 import { attendanceQuerySchema, rosterSchema } from './attendance.schema';
 
 interface AttendanceQuery {
@@ -67,7 +67,7 @@ const saveRoster = asyncHandler(async (req, res) => {
           classId: input.classId,
           studentId: entry.studentId,
           date: input.date,
-          status: entry.status,
+          status: entry.status as AttendanceStatus,
           note: entry.note ?? '',
           markedBy: req.user!.id,
         },

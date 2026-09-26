@@ -105,9 +105,9 @@ export const getSettings = asyncHandler(async (_req, res) => {
         from: setting.smtp?.from ?? '',
         hasPassword: Boolean(setting.smtp?.pass),
       },
-      features: resolveFeatures(
-        Object.fromEntries((setting.features as Map<string, boolean> | undefined)?.entries() ?? []),
-      ),
+      features: resolveFeatures({
+        ...((setting.features as unknown as Record<string, boolean> | undefined) ?? {}),
+      }),
     },
   });
 });
@@ -133,7 +133,9 @@ export const patchFeatures = asyncHandler(async (req, res) => {
   const setting = await Setting.findOne();
   if (!setting) throw ApiError.badRequest('This installation has not been set up yet.');
 
-  const current = resolveFeatures(Object.fromEntries((setting.features as Map<string, boolean>)?.entries() ?? []));
+  const current = resolveFeatures({
+    ...((setting.features as unknown as Record<string, boolean> | undefined) ?? {}),
+  });
   const next = { ...current, ...(req.body as Record<string, boolean>) };
 
   setting.features = new Map(FEATURE_KEYS.map((key) => [key, next[key]])) as never;

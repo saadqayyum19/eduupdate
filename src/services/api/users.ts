@@ -1,8 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Role, User } from '@/types';
-import { AVATAR_COLORS, hash } from '@/mocks/seed';
-import { getDb, mockDelay, nextId } from '../mockDb';
-import { emailInUse, purgeUserReferences, reconcileClass } from '../cascade';
+import { http } from '../http';
 
 export const userKeys = {
   all: ['users'] as const,
@@ -12,6 +10,8 @@ export const userKeys = {
 
 export interface UserFilters {
   role?: Role | 'all';
+  status?: User['status'] | 'all';
+  classId?: string;
   search?: string;
 }
 
@@ -24,7 +24,7 @@ export interface UserInput {
   designation?: string;
   classIds?: string[];
   subjectIds?: string[];
-  classId?: string;
+  classId?: string | null;
   rollNo?: string;
   registrationNo?: string;
   fatherName?: string;
@@ -37,166 +37,67 @@ export interface UserInput {
   childIds?: string[];
 }
 
+export interface CreateAccountInput extends UserInput {
+  /** Administrator-typed initial password. When omitted the API generates one. */
+  password?: string;
+  /** Also email the credentials to the new account. */
+  sendInvite?: boolean;
+}
+
+export interface CreateAccountResult {
+  user: User;
+  temporaryPassword?: string;
+  invited: boolean;
+}
+
+function toParams(filters: UserFilters) {
+  return {
+    pageSize: 200,
+    role: filters.role && filters.role !== 'all' ? filters.role : undefined,
+    status: filters.status && filters.status !== 'all' ? filters.status : undefined,
+    classId: filters.classId,
+    search: filters.search || undefined,
+  };
+}
+
 export async function fetchUsers(filters: UserFilters = {}): Promise<User[]> {
-  await mockDelay();
-  const search = filters.search?.trim().toLowerCase() ?? '';
-  return getDb()
-    .users.filter((user) => (filters.role && filters.role !== 'all' ? user.role === filters.role : true))
-    .filter((user) =>
-      search
-        ? user.name.toLowerCase().includes(search) ||
-          user.email.toLowerCase().includes(search) ||
-          (user.rollNo ?? '').toLowerCase().includes(search)
-        : true,
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const { data } = await http.get<{ items: User[] }>('/users', { params: toParams(filters) });
+  return data.items;
 }
 
 export async function fetchUser(id: string): Promise<User> {
-  await mockDelay();
-  const user = getDb().users.find((item) => item.id === id);
-  if (!user) throw new Error('That user could not be found.');
-  return user;
+  const { data } = await http.get<{ user: User }>(`/users/${id}`);
+  return data.user;
 }
 
-export async function createUser(input: UserInput): Promise<User> {
-  await mockDelay();
-  if (emailInUse(input.email)) {
-    throw new Error('That email address is already used by another account.');
-  }
-
-  const users = getDb().users;
-  const user: User = {
-    id: nextId('u'),
-    name: input.name.trim(),
-    email: input.email.trim(),
-    phone: input.phone,
-    role: input.role,
-    status: input.status ?? 'active',
-    avatarColor: AVATAR_COLORS[hash(input.email) % AVATAR_COLORS.length],
-    joinedAt: new Date().toISOString().slice(0, 10),
-    designation: input.designation,
-    classIds: input.classIds,
-    classId: input.classId,
-    rollNo: input.rollNo,
-    registrationNo: input.registrationNo,
-    fatherName: input.fatherName,
-    cnic: input.cnic,
-    bform: input.bform,
-    dob: input.dob,
-    address: input.address,
-    photoUrl: input.photoUrl,
-    parentIds: input.parentIds ?? [],
-    childIds: input.childIds ?? [],
-  };
-  users.push(user);
-
-  // Keep the class / user graph symmetrical (a student joins its class, a child links to a parent).
-  if (user.role === 'student' && user.classId) {
-    const classRoom = getDb().classes.find((item) => item.id === user.classId);
-    if (classRoom && !classRoom.studentIds.includes(user.id)) {
-      classRoom.studentIds = [...classRoom.studentIds, user.id];
-      reconcileClass(classRoom.id);
-    }
-  }
-  if (user.role === 'parent') {
-    user.childIds?.forEach((childId) => {
-      const child = getDb().users.find((item) => item.id === childId);
-      if (child) child.parentIds = [...new Set([...(child.parentIds ?? []), user.id])];
-    });
-  }
-
-  return user;
+/** Creates an account. Always returns the record the administrator just created. */
+export async function createUser(input: CreateAccountInput): Promise<CreateAccountResult> {
+  const { data } = await http.post<CreateAccountResult>('/users', input);
+  return data;
 }
 
-/** Fields an update is allowed to touch. Anything else is ignored. */
-const MUTABLE_USER_FIELDS = [
-  'name',
-  'email',
-  'phone',
-  'role',
-  'status',
-  'designation',
-  'classIds',
-  'subjectIds',
-  'classId',
-  'rollNo',
-  'registrationNo',
-  'fatherName',
-  'cnic',
-  'bform',
-  'dob',
-  'address',
-  'photoUrl',
-  'parentIds',
-  'childIds',
-  'avatarColor',
-] as const satisfies readonly (keyof UserInput | keyof User)[];
-
-export async function updateUser(id: string, input: Partial<UserInput>): Promise<User> {
-  await mockDelay();
-  const db = getDb();
-  const index = db.users.findIndex((item) => item.id === id);
-  if (index === -1) throw new Error('That user could not be found.');
-
-  if (input.email && emailInUse(input.email, id)) {
-    throw new Error('That email address is already used by another account.');
-  }
-
-  const previous = db.users[index];
-  const patch: Partial<User> = {};
-  MUTABLE_USER_FIELDS.forEach((field) => {
-    if (field in input) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (patch as any)[field] = (input as any)[field];
-    }
-  });
-
-  const next: User = { ...previous, ...patch };
-  if (patch.name) next.name = patch.name.trim();
-  if (patch.email) next.email = patch.email.trim();
-  db.users[index] = next;
-
-  // A student moved to another class must leave the one they were in before.
-  if (next.role === 'student' && next.classId) {
-    const classRoom = db.classes.find((item) => item.id === next.classId);
-    if (classRoom && !classRoom.studentIds.includes(id)) {
-      classRoom.studentIds = [...classRoom.studentIds, id];
-    }
-    reconcileClass(next.classId);
-  } else if (previous.classId && previous.classId !== next.classId) {
-    const oldRoom = db.classes.find((item) => item.id === previous.classId);
-    if (oldRoom) oldRoom.studentIds = oldRoom.studentIds.filter((studentId) => studentId !== id);
-    reconcileClass(previous.classId);
-  }
-
-  // Re-sync parent ↔ child links from the edited account.
-  if (next.role === 'parent') {
-    db.users.forEach((user) => {
-      const shouldLink = (next.childIds ?? []).includes(user.id);
-      const linked = (user.parentIds ?? []).includes(id);
-      if (shouldLink && !linked) user.parentIds = [...(user.parentIds ?? []), id];
-      if (!shouldLink && linked) user.parentIds = (user.parentIds ?? []).filter((parentId) => parentId !== id);
-    });
-  }
-
-  // A teacher's class list changed → re-reconcile the classes involved.
-  if (next.role === 'teacher' || next.role === 'teacher_incharge') {
-    const touched = new Set([...(previous.classIds ?? []), ...(next.classIds ?? [])]);
-    touched.forEach((classId) => reconcileClass(classId));
-  }
-
-  return db.users[index];
+export async function updateUser(id: string, input: Partial<CreateAccountInput>): Promise<User> {
+  const { data } = await http.patch<{ user: User }>(`/users/${id}`, input);
+  return data.user;
 }
 
 export async function deleteUser(id: string): Promise<{ id: string }> {
-  await mockDelay();
-  const db = getDb();
-
-  db.users = db.users.filter((item) => item.id !== id);
-  purgeUserReferences(id);
-
+  await http.delete(`/users/${id}`);
   return { id };
+}
+
+export async function updateMyProfile(input: {
+  name?: string;
+  phone?: string;
+  address?: string;
+  photoUrl?: string;
+}): Promise<User> {
+  const { data } = await http.patch<{ user: User }>('/users/me', input);
+  return data.user;
+}
+
+export async function changeMyPassword(input: { currentPassword: string; newPassword: string }): Promise<void> {
+  await http.post('/users/me/password', input);
 }
 
 // ---------------------------------------------------------------------------- hooks
@@ -224,6 +125,7 @@ export function useCreateUser() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.all });
       queryClient.invalidateQueries({ queryKey: ['classes'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }
@@ -231,7 +133,7 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Partial<UserInput> }) => updateUser(id, input),
+    mutationFn: ({ id, input }: { id: string; input: Partial<CreateAccountInput> }) => updateUser(id, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: userKeys.all });
       queryClient.invalidateQueries({ queryKey: ['classes'] });
@@ -253,4 +155,16 @@ export function useDeleteUser() {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
+}
+
+export function useUpdateMyProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateMyProfile,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.all }),
+  });
+}
+
+export function useChangeMyPassword() {
+  return useMutation({ mutationFn: changeMyPassword });
 }
