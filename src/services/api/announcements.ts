@@ -50,7 +50,7 @@ export async function deleteAnnouncement(id: string): Promise<{ id: string }> {
 
 // ---------------------------------------------------------------------------- hooks
 
-export function useAnnouncements() {
+export function useAnnouncements(_role?: string) {
   return useQuery({ queryKey: announcementKeys.list(), queryFn: fetchAnnouncements });
 }
 

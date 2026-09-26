@@ -1,4 +1,4 @@
-import axios, { type AxiosError, type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
+import axios, { type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
 
 /**
  * HTTP layer for the EduCore Lite API.

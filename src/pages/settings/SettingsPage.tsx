@@ -314,6 +314,20 @@ export default function SettingsPage() {
                 name="minAttendancePercent"
                 type="number"
                 min="0"
+                max="100"
+                defaultValue={settings.attendanceRules.minAttendancePercent}
+                hint="Flag students below this threshold on reports and exam roll sheets."
+              />
+              <div className="flex justify-end">
+                <Button type="submit" loading={updateSettings.isPending} leftIcon={<Save className="h-4 w-4" />}>
+                  Save attendance rules
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
       {tab === 'features' && (
         <Card>
           <CardHeader
@@ -392,20 +406,6 @@ export default function SettingsPage() {
               <Button type="submit" variant="danger">
                 Permanently wipe school data
               </Button>
-            </form>
-          </Card>
-        </div>
-      )}
-
-                max="100"
-                defaultValue={settings.attendanceRules.minAttendancePercent}
-                hint="Flag students below this threshold on reports and exam roll sheets."
-              />
-              <div className="flex justify-end">
-                <Button type="submit" loading={updateSettings.isPending} leftIcon={<Save className="h-4 w-4" />}>
-                  Save attendance rules
-                </Button>
-              </div>
             </form>
           </Card>
         </div>

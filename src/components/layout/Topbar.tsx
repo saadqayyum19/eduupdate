@@ -5,9 +5,8 @@ import { Menu } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
 import { ProfileMenu } from './ProfileMenu';
-import { RoleSwitcher } from './RoleSwitcher';
 
-/** Sticky top bar: mobile menu, global search, notifications, role switcher, profile. */
+/** Sticky top bar: mobile menu, global search, notifications, profile. */
 export function Topbar() {
   const dispatch = useAppDispatch();
 
@@ -37,7 +36,6 @@ export function Topbar() {
         <div className="min-w-0 flex-1"><GlobalSearch /></div>
 
         <div className="ml-auto flex items-center gap-2">
-          <RoleSwitcher />
           <NotificationBell />
           <ProfileMenu />
         </div>
