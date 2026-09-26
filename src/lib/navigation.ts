@@ -123,6 +123,7 @@ export const NAV_SECTIONS: NavSection[] = [
     id: 'platform',
     label: 'Platform admin',
     items: [
+      { label: 'Settings', to: '/settings', icon: Settings2, capability: 'settings.manage' },
       { label: 'Institutions', to: '/admin/institutions', icon: Landmark, capability: 'institutions.manage' },
       { label: 'Feature access', to: '/admin/features', icon: Settings2, capability: 'institutions.manage' },
       { label: 'Role matrix', to: '/admin/roles', icon: ShieldCheck, capability: 'institutions.manage' },

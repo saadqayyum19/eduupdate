@@ -7,6 +7,7 @@ import type { Role } from '@/types';
  */
 export type Capability =
   | 'dashboard.view'
+  | 'settings.manage'
   | 'institutions.manage'
   | 'audit.view'
   | 'users.view'
@@ -36,6 +37,7 @@ export type Capability =
 const P: Record<Role, Capability[]> = {
   super_admin: [
     'dashboard.view',
+    'settings.manage',
     'institutions.manage',
     'audit.view',
     'users.view',
@@ -61,6 +63,7 @@ const P: Record<Role, Capability[]> = {
   ],
   admin: [
     'dashboard.view',
+    'settings.manage',
     'users.view',
     'users.manage',
     'classes.view',

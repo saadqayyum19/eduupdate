@@ -7,6 +7,7 @@ import type { Role } from '../models/User';
  */
 export type Capability =
   | 'dashboard.view'
+  | 'settings.manage'
   | 'institutions.manage'
   | 'audit.view'
   | 'users.view'
@@ -35,17 +36,17 @@ export type Capability =
 
 const P: Record<Role, Capability[]> = {
   super_admin: [
-    'dashboard.view', 'institutions.manage', 'audit.view', 'users.view', 'users.manage',
+    'dashboard.view', 'settings.manage', 'institutions.manage', 'audit.view', 'users.view', 'users.manage',
     'classes.view', 'classes.manage', 'subjects.view', 'subjects.manage', 'timetable.view',
     'timetable.manage', 'attendance.view', 'attendance.take', 'quizzes.view', 'quizzes.manage',
     'quizzes.mark', 'marks.view', 'marks.enter', 'fees.view', 'fees.manage', 'announcements.view',
     'announcements.manage', 'reports.view',
   ],
   admin: [
-    'dashboard.view', 'users.view', 'users.manage', 'classes.view', 'classes.manage', 'subjects.view',
-    'subjects.manage', 'timetable.view', 'timetable.manage', 'attendance.view', 'quizzes.view',
-    'marks.view', 'fees.view', 'fees.manage', 'announcements.view', 'announcements.manage',
-    'reports.view',
+    'dashboard.view', 'settings.manage', 'users.view', 'users.manage', 'classes.view', 'classes.manage',
+    'subjects.view', 'subjects.manage', 'timetable.view', 'timetable.manage', 'attendance.view',
+    'quizzes.view', 'marks.view', 'fees.view', 'fees.manage', 'announcements.view',
+    'announcements.manage', 'reports.view',
   ],
   principal: [
     'dashboard.view', 'users.view', 'classes.view', 'subjects.view', 'timetable.view',
